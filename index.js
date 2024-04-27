@@ -2,11 +2,15 @@ const express = require('express');
 const cors = require('cors')
 const multer = require('multer')
 const mongoose = require('mongoose')
-const {S3Client, PutObjectCommand} = require('@aws-sdk/client-s3')
+const {S3Client, PutObjectCommand, GetObjectCommand} = require('@aws-sdk/client-s3')
+const {getSignedUrl} = require('@aws-sdk/s3-request-presigner')
+const imageModel = require('./models')
+const crypto = require('crypto')
 const upload = multer()
 const app = express()
 require('dotenv').config()
 const port = process.env.PORT
+const randomImageName = (bytes = 32) => crypto.randomBytes(bytes).toString('hex')
 mongoose.connect(process.env.MONGODB_URI)
 
 
@@ -37,21 +41,42 @@ app.post('/upload-image', upload.any(), async(req, res)=>{
 
     const image = files.find((item) => item.fieldname === 'image');
     console.log(image)
+
+    const imageName = randomImageName();
     const params = {
         Bucket: bucket,
-        Key: `demo/${image.originalname}`,
+        Key: `demo/${imageName}`,
         Body: image.buffer,
         ContentType: image.mimetype,
+    }
+    const getObjParams = {
+        Bucket: bucket,
+        Key: `demo/${imageName}`,
     }
 
     const command = new PutObjectCommand(params)
     await s3.send(command)
 
+    const getImageUrl = new GetObjectCommand(getObjParams)
+    console.log(getImageUrl)
+    const url = await getSignedUrl(s3, getImageUrl)
+
+    const createImageData = await imageModel.create({
+        title,
+        description,
+        image: imageName,
+        imageUrl: url
+    })
+
+    console.log(createImageData)
     res.send('upload done')
 })
 
-app.get('/image', async(req, res)=>{
-    res.send('get route')
+app.get('/images', async(req, res)=>{
+    console.log("a")
+    const allImages = await imageModel.find({})
+    console.log(allImages)
+    res.status(200).json({data: allImages})
 })
 
 app.delete('/delete-image', async(req, res)=>{
