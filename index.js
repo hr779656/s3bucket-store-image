@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors')
 const multer = require('multer')
 const mongoose = require('mongoose')
-const {S3Client, PutObjectCommand, GetObjectCommand} = require('@aws-sdk/client-s3')
+const {S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand} = require('@aws-sdk/client-s3')
 const {getSignedUrl} = require('@aws-sdk/s3-request-presigner')
 const imageModel = require('./models')
 const crypto = require('crypto')
@@ -40,7 +40,6 @@ app.post('/upload-image', upload.any(), async(req, res)=>{
     const {title, description} = req.body
 
     const image = files.find((item) => item.fieldname === 'image');
-    console.log(image)
 
     const imageName = randomImageName();
     const params = {
@@ -58,7 +57,6 @@ app.post('/upload-image', upload.any(), async(req, res)=>{
     await s3.send(command)
 
     const getImageUrl = new GetObjectCommand(getObjParams)
-    console.log(getImageUrl)
     const url = await getSignedUrl(s3, getImageUrl)
 
     const createImageData = await imageModel.create({
@@ -67,20 +65,32 @@ app.post('/upload-image', upload.any(), async(req, res)=>{
         image: imageName,
         imageUrl: url
     })
-
-    console.log(createImageData)
     res.send('upload done')
 })
 
 app.get('/images', async(req, res)=>{
-    console.log("a")
     const allImages = await imageModel.find({})
-    console.log(allImages)
     res.status(200).json({data: allImages})
 })
 
-app.delete('/delete-image', async(req, res)=>{
-    res.send('delete route')
+app.delete('/delete-image/:imageId', async(req, res)=>{
+    const {imageId} = req.params
+    
+    const findDocument = await imageModel.findById(imageId)
+    console.log(findDocument)
+    if (!findDocument){
+        res.send('document not found')
+    }
+    const params = {
+        Bucket: bucket,
+        Key: `demo/${findDocument.image}`
+    }
+
+    const command = new DeleteObjectCommand(params)
+    await s3.send(command)
+
+    await imageModel.findByIdAndDelete(imageId)
+    res.send('deleted successfully')
 })
 
 const db = mongoose.connection;
